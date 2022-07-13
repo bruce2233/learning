@@ -1,8 +1,10 @@
 package mynetpoll
-import(
+
+import (
 	"net"
 )
 
-func main(){
-	net.Listen()
+func main() {
+	net.Listen("tcp", "10086")
+
 }
