@@ -1,5 +1,5 @@
 // package main
-package other
+package mem
 import (
 	"fmt"
 	"unsafe"
