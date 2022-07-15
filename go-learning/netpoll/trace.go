@@ -6,5 +6,4 @@ import (
 
 func main() {
 	net.Listen("tcp", "10086")
-
 }
