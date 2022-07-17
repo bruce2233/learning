@@ -1,0 +1,3 @@
+[submodule "rpcx-examples"]
+	path = rpcx-examples
+	url = git@github.com:rpcxio/rpcx-examples.git
