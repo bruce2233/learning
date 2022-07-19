@@ -3,19 +3,13 @@ package netpoll
 import (
 	"net"
 	"testing"
+	"time"
 
-	"github.com/panjf2000/gnet/v2/pkg/errors"
 	"golang.org/x/sys/unix"
 )
 
-func TestEpoll(t *testing.T) {
-	// type eventpoll = unix.EpollEvent
-	poller, err := OpenPoller()
-	t.Log(poller, err)
-}
-
 func TestSocket(t *testing.T) {
-	tcpAddr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:8086")
+	tcpAddr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:8866")
 	sa6 := &unix.SockaddrInet6{Port: tcpAddr.Port}
 	if tcpAddr.IP != nil {
 		copy(sa6.Addr[:], tcpAddr.IP) // copy all bytes of slice to array
@@ -35,80 +29,120 @@ func TestSocket(t *testing.T) {
 		return
 	}
 	t.Log(tcpAddr)
-	net.Listen()
 }
 
-func GetTCPSockAddr(proto, addr string) (sa unix.Sockaddr, family int, tcpAddr *net.TCPAddr, ipv6only bool, err error) {
-	var tcpVersion string
-
-	tcpAddr, err = net.ResolveTCPAddr(proto, addr)
+func TestTcpSocket(t *testing.T) {
+	fd, netAddr, err := tcpSocket("tcp", "127.0.0.1:8866", true)
 	if err != nil {
-		return
+		t.Log("error")
 	}
+	t.Log(fd)
+	t.Log(netAddr)
+	// net.Listener.Accept()
 
-	tcpVersion, err = determineTCPProto(proto, tcpAddr)
-	if err != nil {
-		return
-	}
-
-	switch tcpVersion {
-	case "tcp4":
-		sa4 := &unix.SockaddrInet4{Port: tcpAddr.Port}
-
-		if tcpAddr.IP != nil {
-			if len(tcpAddr.IP) == 16 {
-				copy(sa4.Addr[:], tcpAddr.IP[12:16]) // copy last 4 bytes of slice to array
-			} else {
-				copy(sa4.Addr[:], tcpAddr.IP) // copy all bytes of slice to array
-			}
-		}
-
-		sa, family = sa4, unix.AF_INET
-	case "tcp6":
-		ipv6only = true
-		fallthrough
-	case "tcp":
-		sa6 := &unix.SockaddrInet6{Port: tcpAddr.Port}
-
-		if tcpAddr.IP != nil {
-			copy(sa6.Addr[:], tcpAddr.IP) // copy all bytes of slice to array
-		}
-
-		if tcpAddr.Zone != "" {
-			var iface *net.Interface
-			iface, err = net.InterfaceByName(tcpAddr.Zone)
-			if err != nil {
-				return
-			}
-
-			sa6.ZoneId = uint32(iface.Index)
-		}
-
-		sa, family = sa6, unix.AF_INET6
-	default:
-		err = errors.ErrUnsupportedProtocol
-	}
-
-	return
 }
 
-func determineTCPProto(proto string, addr *net.TCPAddr) (string, error) {
-	// If the protocol is set to "tcp", we try to determine the actual protocol
-	// version from the size of the resolved IP address. Otherwise, we simple use
-	// the protocol given to us by the caller.
-
-	if addr.IP.To4() != nil {
-		return "tcp4", nil
+func TestEpollListener(t *testing.T) {
+	socketFd, netAddr, err := tcpSocket("tcp", "192.168.0.1:8866", false)
+	if err != nil {
+		t.Log("sopcket error")
 	}
+	t.Log(socketFd)
+	t.Log(netAddr)
 
-	if addr.IP.To16() != nil {
-		return "tcp6", nil
+	epollFd, err := unix.EpollCreate1(unix.EPOLL_CLOEXEC)
+	if err != nil {
 	}
+	t.Log(epollFd)
 
-	switch proto {
-	case "tcp", "tcp4", "tcp6":
-		return proto, nil
+	unix.EpollCtl(epollFd, unix.EPOLL_CTL_ADD, socketFd, &unix.EpollEvent{
+		Fd: int32(socketFd), Events: unix.EPOLLIN})
+	el := make([]unix.EpollEvent, 128)
+	err = unix.Listen(socketFd, 0)
+	t.Log("after listen")
+	if err != nil {
+		t.Log(err)
 	}
+	n, err := unix.EpollWait(epollFd, el, -1)
+	t.Log(el)
+	t.Log(err)
+	t.Log(n)
+	bytes := make([]byte, 256)
+	bytesNum, err := unix.Read(epollFd, bytes)
+	if err != nil {
+		t.Log(err)
+	}
+	t.Log(bytesNum)
+}
 
-	return "", errors.ErrUnsupportedTCPProtocol
+func TestEpollConn(t *testing.T) {
+	socketFd, err := unix.Open("./tmp.txt", unix.O_RDWR|unix.O_CREAT, 777)
+	if err != nil {
+		t.Log(err)
+	}
+	t.Log(socketFd)
+	// t.Log(netAddr)
+
+	epollFd, err := unix.EpollCreate1(unix.EPOLL_CLOEXEC)
+	if err != nil {
+	}
+	t.Log(epollFd)
+
+	unix.EpollCtl(epollFd, unix.EPOLL_CTL_ADD, socketFd, &unix.EpollEvent{
+		Fd: int32(socketFd), Events: unix.EPOLLIN})
+	el := make([]unix.EpollEvent, 128)
+	// for {
+	n, err := unix.EpollWait(epollFd, el, -1)
+	t.Log(el)
+	t.Log(err)
+	t.Log(n)
+	bytes := make([]byte, 256)
+	bytesNum, err := unix.Read(epollFd, bytes)
+	if err != nil {
+		t.Log(err)
+	}
+	t.Log(bytesNum)
+	// }
+
+}
+
+func TestWrite(t *testing.T) {
+	fd, err := unix.Open("./tmp.txt", unix.O_RDWR, 0)
+	if err != nil {
+		t.Log(err)
+	}
+	unix.Write(fd, []byte("Hello IO"))
+}
+
+func TestWriteSocket(t *testing.T) {
+	conn, err := net.Dial("tcp", "192.168.0.1:50341")
+	if err != nil {
+		t.Log(err)
+	}
+	conn.Write([]byte("Hello Socket"))
+}
+
+func TestSocketCall(t *testing.T) {
+	unix.Socket(unix.AF_INET, unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC|unix.SOCK_STREAM, unix.IPPROTO_TCP)
+}
+
+func TestGetTCPAddr(t *testing.T) {
+	sa, family, tcpAddr, ipv6only, err := GetTCPSockAddr("tcp", "127.0.0.1:8866")
+	if err != nil {
+		t.Log(err)
+	}
+	t.Log(sa)
+	t.Log(family)
+	t.Log(tcpAddr)
+	t.Log(ipv6only)
+}
+
+func TestNet(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:8866")
+	time.Sleep(1e12)
+	if err != nil {
+		t.Log(err)
+	}
+	ln.Accept()
+	t.Log(ln)
 }
