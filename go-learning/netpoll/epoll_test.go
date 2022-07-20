@@ -44,7 +44,7 @@ func TestTcpSocket(t *testing.T) {
 }
 
 func TestEpollListener(t *testing.T) {
-	socketFd, netAddr, err := tcpSocket("tcp", "127.0.0.1:8866", false)
+	socketFd, netAddr, err := tcpSocket("tcp", "127.0.0.1:8866", true)
 	if err != nil {
 		t.Log("socket error")
 	}
@@ -60,8 +60,9 @@ func TestEpollListener(t *testing.T) {
 	unix.EpollCtl(epollFd, unix.EPOLL_CTL_ADD, socketFd, &unix.EpollEvent{
 		Fd: int32(socketFd), Events: unix.EPOLLIN})
 	el := make([]unix.EpollEvent, 128)
+	t.Log("before epoll wait")
 	n, err := unix.EpollWait(epollFd, el, -1)
-	t.Log(el)
+	t.Log(el[0].Fd, el[0].Events)
 	t.Log(err)
 	t.Log(n)
 	bytes := make([]byte, 256)
@@ -82,6 +83,7 @@ func TestEpollConn(t *testing.T) {
 
 	epollFd, err := unix.EpollCreate1(unix.EPOLL_CLOEXEC)
 	if err != nil {
+		t.Log(err)
 	}
 	t.Log(epollFd)
 
@@ -101,27 +103,6 @@ func TestEpollConn(t *testing.T) {
 	t.Log(bytesNum)
 	// }
 
-}
-
-func TestWrite(t *testing.T) {
-	fd, err := unix.Open("./tmp.txt", unix.O_RDWR, 0)
-	if err != nil {
-		t.Log(err)
-	}
-	epfd, err :=unix.EpollCreate1(1)
-	if err!=nil{
-		t.Log(err)
-	}
-	unix.
-	unix.Write(fd, []byte("Hello IO"))
-}
-
-func TestWriteSocket(t *testing.T) {
-	conn, err := net.Dial("tcp", "192.168.0.1:50341")
-	if err != nil {
-		t.Log(err)
-	}
-	conn.Write([]byte("Hello Socket"))
 }
 
 func TestSocketCall(t *testing.T) {
@@ -144,7 +125,8 @@ func TestSocketCall(t *testing.T) {
 	unix.Bind(fd, sa)
 	unix.Listen(fd, 1024)
 	t.Log("after listen")
-	time.Sleep(1e12)
+	// time.Sleep(1e12)
+
 }
 
 func TestGetTCPAddr(t *testing.T) {
@@ -159,11 +141,9 @@ func TestGetTCPAddr(t *testing.T) {
 }
 
 func TestNet(t *testing.T) {
-	ln, err := net.Listen("tcp", "127.0.0.1:8866")
-	time.Sleep(1e12)
+	conn, err := net.Dial("tcp", "127.0.0.1:8866")
 	if err != nil {
 		t.Log(err)
 	}
-	ln.Accept()
-	t.Log(ln)
+	t.Log(conn)
 }
