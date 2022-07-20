@@ -65,12 +65,18 @@ func TestEpollListener(t *testing.T) {
 	t.Log(el[0].Fd, el[0].Events)
 	t.Log(err)
 	t.Log(n)
-	bytes := make([]byte, 256)
-	bytesNum, err := unix.Read(epollFd, bytes)
+	// bytes := make([]byte, 256)
+	// bytesNum, err := unix.Read(epollFd, bytes)
+	// if err != nil {
+	// 	t.Log(err)
+	// }
+	// t.Log(bytesNum)
+	nfd, sa, err := unix.Accept(int(el[0].Fd))
 	if err != nil {
 		t.Log(err)
 	}
-	t.Log(bytesNum)
+	t.Log(nfd)
+	t.Log(sa)
 }
 
 func TestEpollConn(t *testing.T) {
