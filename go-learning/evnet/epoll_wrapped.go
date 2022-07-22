@@ -1,6 +1,7 @@
 package netpoll
 
 import (
+	"math/rand"
 	"net"
 	"os"
 
@@ -13,7 +14,8 @@ type Poller struct {
 	efd int
 }
 type PollAttachment struct {
-	FD int
+	Fd    int
+	Event unix.EpollEvent
 }
 
 const (
@@ -22,11 +24,6 @@ const (
 	readWriteEvents = readEvents | writeEvents
 )
 
-func (p *Poller) AddRead(pa *PollAttachment) error {
-	return os.NewSyscallError("epoll_ctl add",
-		unix.EpollCtl(p.fd, unix.EPOLL_CTL_ADD, pa.FD, &unix.EpollEvent{Fd: int32(pa.FD), Events: readEvents}))
-}
-
 func OpenPoller() (poller *Poller, err error) {
 	poller = new(Poller)
 	if poller.fd, err = unix.EpollCreate1(unix.EPOLL_CLOEXEC); err != nil {
@@ -34,12 +31,12 @@ func OpenPoller() (poller *Poller, err error) {
 		err = os.NewSyscallError("epoll_create1", err)
 		return
 	}
-	if poller.efd, err = unix.Eventfd(0, unix.EFD_NONBLOCK|unix.EFD_CLOEXEC); err != nil {
-		// _ = poller.Close()
-		poller = nil
-		err = os.NewSyscallError("eventfd", err)
-		return
-	}
+	// if poller.efd, err = unix.Eventfd(0, unix.EFD_NONBLOCK|unix.EFD_CLOEXEC); err != nil {
+	// 	// _ = poller.Close()
+	// 	poller = nil
+	// 	err = os.NewSyscallError("eventfd", err)
+	// 	return
+	// }
 	// poller.efdBuf = make([]byte, 8)
 	// if err = poller.AddRead(&PollAttachment{FD: poller.efd}); err != nil {
 	// 	_ = poller.Close()
@@ -50,6 +47,66 @@ func OpenPoller() (poller *Poller, err error) {
 	// poller.urgentAsyncTaskQueue = queue.NewLockFreeQueue()
 	return
 }
+
+func (poller *Poller) AddPollRead(pafd int) error {
+	err := unix.EpollCtl(poller.fd, unix.EPOLL_CTL_ADD, pafd, &unix.EpollEvent{Fd: int32(pafd), Events: readEvents})
+	return os.NewSyscallError("AddPollRead Error", err)
+}
+
+func (poller *Poller) Polling(func(fd int, events uint32) error) (nfd int, err error) {
+	eventsList := []unix.EpollEvent{}
+
+	unix.EpollWait(poller.fd, eventsList, -1)
+	for event := range eventsList {
+		println(event)
+
+	}
+
+	return
+}
+
+type MainReactor struct {
+	subReactors []SubReactor
+	poller      Poller
+}
+
+type SubReactor struct {
+	poller Poller
+}
+// SockaddrToTCPOrUnixAddr converts a Sockaddr to a net.TCPAddr or net.UnixAddr.
+// Returns nil if conversion fails.
+func SockaddrToTCPOrUnixAddr(sa unix.Sockaddr) net.Addr {
+	switch sa := sa.(type) {
+	case *unix.SockaddrInet4:
+		ip := sockaddrInet4ToIP(sa)
+		return &net.TCPAddr{IP: ip, Port: sa.Port}
+	case *unix.SockaddrInet6:
+		ip, zone := sockaddrInet6ToIPAndZone(sa)
+		return &net.TCPAddr{IP: ip, Port: sa.Port, Zone: zone}
+	case *unix.SockaddrUnix:
+		return &net.UnixAddr{Name: sa.Name, Net: "unix"}
+	}
+	return nil
+}
+
+
+func (mainReactor MainReactor) accept(fd int, events uint32) error {
+	nfd, sa, err := unix.Accept(fd)
+	mainReactor.subReactors[rand.Intn(2)].poller.AddPollRead(nfd)
+	if err != nil {
+		if err == unix.EAGAIN {
+			return nil
+		}
+		return err
+	}
+	if err = os.NewSyscallError("fcntl nonblock", unix.SetNonblock(nfd, true)); err != nil {
+		return err
+	}
+	mainReactor.subReactors[0].poller.AddPollRead(nfd)
+	println(mainReactor.subReactors[0])
+	return err
+}
+
 func GetTCPSockAddr(proto, addr string) (sa unix.Sockaddr, family int, tcpAddr *net.TCPAddr, ipv6only bool, err error) {
 	var tcpVersion string
 
@@ -143,6 +200,7 @@ func tcpSocket(proto, addr string, passive bool) (fd int, netAddr net.Addr, err 
 func sysSocket(family, sotype, proto int) (int, error) {
 	return unix.Socket(family, sotype|unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC, proto)
 }
+
 func determineTCPProto(proto string, addr *net.TCPAddr) (string, error) {
 	// If the protocol is set to "tcp", we try to determine the actual protocol
 	// version from the size of the resolved IP address. Otherwise, we simple use

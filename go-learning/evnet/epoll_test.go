@@ -31,30 +31,31 @@ func TestSocket(t *testing.T) {
 	t.Log(tcpAddr)
 }
 
+
 func TestTcpSocket(t *testing.T) {
-	fd, netAddr, err := tcpSocket("tcp", "127.0.0.1:8866", true)
-	if err != nil {
-		t.Log("error")
-	}
+	fd, netAddr, _ := tcpSocket("tcp", "127.0.0.1:8866", true)
 	t.Log(fd)
 	t.Log(netAddr)
 	// net.Listener.Accept()
 	time.Sleep(1e12)
+}
 
+type TestInfo struct {
+	testing.T
+	proto    string
+	addr     string
+	socketFd int
+	netAddr  string
 }
 
 func TestEpollListener(t *testing.T) {
 	socketFd, netAddr, err := tcpSocket("tcp", "127.0.0.1:8866", true)
-	if err != nil {
-		t.Log("socket error")
-	}
+
 	t.Log(socketFd)
 	t.Log(netAddr)
 
 	epollFd, err := unix.EpollCreate1(unix.EPOLL_CLOEXEC)
-	if err != nil {
-		t.Log(err)
-	}
+
 	t.Log(epollFd)
 
 	unix.EpollCtl(epollFd, unix.EPOLL_CTL_ADD, socketFd, &unix.EpollEvent{
@@ -62,16 +63,22 @@ func TestEpollListener(t *testing.T) {
 	el := make([]unix.EpollEvent, 128)
 	t.Log("before epoll wait")
 	n, err := unix.EpollWait(epollFd, el, -1)
-	t.Log(el[0].Fd, el[0].Events)
+
+	acceptFd := el[0].Fd
+	ev := el[0].Events
+	t.Log(acceptFd, ev)
 	t.Log(err)
 	t.Log(n)
+
 	// bytes := make([]byte, 256)
-	// bytesNum, err := unix.Read(epollFd, bytes)
+	// bytesNum, err := unix.Read(int(acceptFd), bytes)
 	// if err != nil {
 	// 	t.Log(err)
 	// }
 	// t.Log(bytesNum)
-	nfd, sa, err := unix.Accept(int(el[0].Fd))
+	// t.Log(string(bytes))
+
+	nfd, sa, err := unix.Accept(int(acceptFd))
 	if err != nil {
 		t.Log(err)
 	}
@@ -80,35 +87,16 @@ func TestEpollListener(t *testing.T) {
 }
 
 func TestEpollConn(t *testing.T) {
-	socketFd, err := unix.Open("./tmp.txt", unix.O_RDWR|unix.O_CREAT, 777)
+	poller, _ := OpenPoller()
+	fd, netAddr, err := tcpSocket("tcp", "127.0.0.1:8866", true)
 	if err != nil {
 		t.Log(err)
 	}
-	t.Log(socketFd)
-	// t.Log(netAddr)
-
-	epollFd, err := unix.EpollCreate1(unix.EPOLL_CLOEXEC)
-	if err != nil {
-		t.Log(err)
-	}
-	t.Log(epollFd)
-
-	unix.EpollCtl(epollFd, unix.EPOLL_CTL_ADD, socketFd, &unix.EpollEvent{
-		Fd: int32(socketFd), Events: unix.EPOLLIN})
-	el := make([]unix.EpollEvent, 128)
-	// for {
-	n, err := unix.EpollWait(epollFd, el, -1)
-	t.Log(el)
-	t.Log(err)
-	t.Log(n)
-	bytes := make([]byte, 256)
-	bytesNum, err := unix.Read(epollFd, bytes)
-	if err != nil {
-		t.Log(err)
-	}
-	t.Log(bytesNum)
-	// }
-
+	t.Log(fd)
+	t.Log(netAddr)
+	pa := PollAttachment{Fd: fd}
+	poller.AddPollRead(pa.Fd)
+	poller.Polling()
 }
 
 func TestSocketCall(t *testing.T) {
