@@ -31,7 +31,6 @@ func TestSocket(t *testing.T) {
 	t.Log(tcpAddr)
 }
 
-
 func TestTcpSocket(t *testing.T) {
 	fd, netAddr, _ := tcpSocket("tcp", "127.0.0.1:8866", true)
 	t.Log(fd)
@@ -140,4 +139,7 @@ func TestNet(t *testing.T) {
 		t.Log(err)
 	}
 	t.Log(conn)
+	bytes := make([]byte, 10)
+	conn.Read(bytes)
+
 }
